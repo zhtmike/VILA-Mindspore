@@ -115,7 +115,7 @@ class Predictor(BasePredictor):
         conv = conv_templates[conv_mode].copy()
     
         image_data = load_image(str(image))
-        image_tensor = self.image_processor.preprocess(image_data, return_tensors='pt')['pixel_values'].half().cuda()
+        image_tensor = self.image_processor.preprocess(image_data, return_tensors='pt')['pixel_values'].half()
     
         # loop start
     
@@ -126,7 +126,7 @@ class Predictor(BasePredictor):
         conv.append_message(conv.roles[1], None)
         prompt = conv.get_prompt()
     
-        input_ids = tokenizer_image_token(prompt, self.tokenizer, IMAGE_TOKEN_INDEX, return_tensors='pt').unsqueeze(0).cuda()
+        input_ids = tokenizer_image_token(prompt, self.tokenizer, IMAGE_TOKEN_INDEX, return_tensors='pt').unsqueeze(0)
         stop_str = conv.sep if conv.sep_style != SeparatorStyle.TWO else conv.sep2
         keywords = [stop_str]
         stopping_criteria = KeywordsStoppingCriteria(keywords, self.tokenizer, input_ids)

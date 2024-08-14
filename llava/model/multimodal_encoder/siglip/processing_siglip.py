@@ -18,11 +18,10 @@ Image/Text processor class for SigLIP.
 
 from typing import List, Optional, Union
 
-from transformers.feature_extraction_utils import BatchFeature
-from transformers.image_utils import ImageInput
-from transformers.processing_utils import ProcessorMixin
-from transformers.tokenization_utils_base import PaddingStrategy, PreTokenizedInput, TextInput, TruncationStrategy
-from transformers.utils import TensorType
+from mindnlp.transformers.feature_extraction_utils import BatchFeature
+from mindnlp.transformers.image_utils import ImageInput
+from mindnlp.transformers.processing_utils import ProcessorMixin
+from mindnlp.transformers.tokenization_utils_base import PaddingStrategy, PreTokenizedInput, TextInput, TruncationStrategy
 
 
 class SiglipProcessor(ProcessorMixin):
@@ -53,7 +52,7 @@ class SiglipProcessor(ProcessorMixin):
         padding: Union[bool, str, PaddingStrategy] = "max_length",
         truncation: Union[bool, str, TruncationStrategy] = None,
         max_length=None,
-        return_tensors: Optional[Union[str, TensorType]] = TensorType.PYTORCH,
+        return_tensors: Optional[str] = "ms",
     ) -> BatchFeature:
         """
         Main method to prepare for the model one or several sequences(s) and image(s). This method forwards the `text`

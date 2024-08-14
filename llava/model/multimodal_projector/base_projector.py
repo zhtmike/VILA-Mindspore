@@ -1,7 +1,8 @@
-import torch.nn as nn
 import re
-import torch
-from transformers import AutoConfig, AutoModel, PretrainedConfig, PreTrainedModel
+import mindspore as ms
+import mindnlp.core.ops as ops
+import mindnlp.core.nn as nn
+from mindnlp.transformers import AutoConfig, AutoModel, PretrainedConfig, PreTrainedModel
 
 
 class IdentityMap(nn.Module):
@@ -41,13 +42,13 @@ class DownSampleBlock(nn.Module):
         return vit_embeds
 
     def flat_square(self, x):
-        n, w, h, c = x.size()
+        n, w, h, c = x.shape
         if w % 2 == 1:
-            x = torch.concat([x, torch.zeros((n, 1, h, c), dtype=x.dtype).to(x.device)], dim=1).contiguous()
-            n, w, h, c = x.size()
+            x = ops.concat([x, ops.zeros((n, 1, h, c), dtype=x.dtype)], dim=1).contiguous()
+            n, w, h, c = x.shape
         if h % 2 == 1:
-            x = torch.concat([x, torch.zeros((n, w, 1, c), dtype=x.dtype).to(x.device)], dim=2).contiguous()
-            n, w, h, c = x.size()
+            x = ops.concat([x, ops.zeros((n, w, 1, c), dtype=x.dtype)], dim=2).contiguous()
+            n, w, h, c = x.shape
         x = x.view(n, w, int(h / 2), int(c * 2))
         x = x.permute(0, 2, 1, 3).contiguous()
         x = x.view(n, int(h / 2), int(w / 2), int(c * 4))

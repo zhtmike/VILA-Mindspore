@@ -73,7 +73,7 @@ def get_model_output(model, image_processor, tokenizer, video_path, qs, options,
     conv.append_message(conv.roles[1], None)
     prompt = conv.get_prompt()
 
-    input_ids = tokenizer_image_token(prompt, tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt").unsqueeze(0).cuda()
+    input_ids = tokenizer_image_token(prompt, tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt").unsqueeze(0)
 
     stop_str = conv.sep if conv.sep_style != SeparatorStyle.TWO else conv.sep2
     keywords = [stop_str]
@@ -86,7 +86,7 @@ def get_model_output(model, image_processor, tokenizer, video_path, qs, options,
     with torch.inference_mode():
         output_ids = model.generate(
             input_ids,
-            images=images.half().cuda(),
+            images=images.half(),
             do_sample=True if args.temperature > 0 else False,
             temperature=args.temperature,
             max_new_tokens=1024,

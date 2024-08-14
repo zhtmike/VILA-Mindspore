@@ -16,8 +16,8 @@
 
 from typing import Dict, List, Optional, Union
 
-from transformers.image_processing_utils import BaseImageProcessor, BatchFeature, get_size_dict
-from transformers.image_transforms import (
+from mindnlp.transformers.image_processing_utils import BaseImageProcessor, BatchFeature, get_size_dict
+from mindnlp.transformers.image_transforms import (
     center_crop,
     resize,
     rescale,
@@ -27,9 +27,8 @@ from transformers.image_transforms import (
     get_channel_dimension_axis,
     convert_to_rgb,
 )
-from transformers.image_utils import (
-    IMAGENET_STANDARD_MEAN,
-    IMAGENET_STANDARD_STD,
+from mindnlp.configs import IMAGENET_STANDARD_MEAN, IMAGENET_STANDARD_STD
+from mindnlp.transformers.image_utils import (
     ChannelDimension,
     ImageInput,
     PILImageResampling,
@@ -95,7 +94,7 @@ class SiglipImageProcessor(BaseImageProcessor):
         self,
         do_resize: bool = True,
         size: Dict[str, int] = None,
-        resample: PILImageResampling = PILImageResampling.BICUBIC,
+        resample = PILImageResampling.BICUBIC,
         do_rescale: bool = True,
         rescale_factor: Union[int, float] = 1 / 255,
         do_normalize: bool = True,
@@ -124,7 +123,7 @@ class SiglipImageProcessor(BaseImageProcessor):
         self,
         image: np.ndarray,
         size: Dict[str, int],
-        resample: PILImageResampling = PILImageResampling.BICUBIC,
+        resample = PILImageResampling.BICUBIC,
         data_format: Optional[Union[str, ChannelDimension]] = None,
         **kwargs,
     ) -> np.ndarray:
@@ -159,7 +158,7 @@ class SiglipImageProcessor(BaseImageProcessor):
         images: ImageInput,
         do_resize: bool = None,
         size: Dict[str, int] = None,
-        resample: PILImageResampling = None,
+        resample = None,
         do_rescale: bool = None,
         rescale_factor: float = None,
         do_normalize: bool = None,

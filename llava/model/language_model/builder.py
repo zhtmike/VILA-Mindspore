@@ -1,13 +1,12 @@
 import math
 import warnings
 import os, os.path as osp
-import torch
-from transformers import PretrainedConfig, PreTrainedModel
-from transformers import (
+import mindspore
+from mindnlp.transformers import PretrainedConfig, PreTrainedModel
+from mindnlp.transformers import (
     AutoTokenizer,
     AutoModelForCausalLM,
     AutoConfig,
-    BitsAndBytesConfig,
     PretrainedConfig,
     PreTrainedModel,
 )
@@ -75,7 +74,7 @@ def build_llm_and_tokenizer(
         context_length_extension(llm_cfg)
 
     llm = AutoModelForCausalLM.from_pretrained(
-        model_name_or_path, config=llm_cfg, torch_dtype=eval(config.model_dtype), *args, **kwargs
+        model_name_or_path, config=llm_cfg, ms_dtype=eval(config.model_dtype), *args, **kwargs
     )
     
     llm_path = model_name_or_path

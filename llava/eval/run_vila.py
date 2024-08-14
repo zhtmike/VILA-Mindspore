@@ -4,9 +4,11 @@ import argparse
 import re
 from io import BytesIO
 import os, os.path as osp
+import time
 
 import requests
-import torch
+import mindspore as ms
+import mindnlp
 from PIL import Image
 
 from llava.constants import (DEFAULT_IM_END_TOKEN, DEFAULT_IM_START_TOKEN,
@@ -104,28 +106,32 @@ def eval_model(args):
     
         
         
-    images_tensor = process_images(images, image_processor, model.config).to(model.device, dtype=torch.float16)
-    input_ids = tokenizer_image_token(prompt, tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt").unsqueeze(0).cuda()
+    images_tensor = process_images(images, image_processor, model.config).to(dtype=ms.float16)
+    input_ids = tokenizer_image_token(prompt, tokenizer, IMAGE_TOKEN_INDEX, return_tensors="ms").unsqueeze(0)
 
     stop_str = conv.sep if conv.sep_style != SeparatorStyle.TWO else conv.sep2
     keywords = [stop_str]
     stopping_criteria = KeywordsStoppingCriteria(keywords, tokenizer, input_ids)
 
     print(images_tensor.shape)
-    with torch.inference_mode():
-        output_ids = model.generate(
-            input_ids,
-            images=[
-                images_tensor,
-            ],
-            do_sample=True if args.temperature > 0 else False,
-            temperature=args.temperature,
-            top_p=args.top_p,
-            num_beams=args.num_beams,
-            max_new_tokens=args.max_new_tokens,
-            use_cache=True,
-            stopping_criteria=[stopping_criteria],
-        )
+    n_trials = 2 if args.benchmark else 1
+    with mindnlp.core.no_grad():
+        for _ in range(n_trials):
+            start_time = time.time()
+            output_ids = model.generate(
+                input_ids,
+                images=[
+                    images_tensor,
+                ],
+                do_sample=True if args.temperature > 0 else False,
+                temperature=args.temperature,
+                top_p=args.top_p,
+                num_beams=args.num_beams,
+                max_new_tokens=args.max_new_tokens,
+                use_cache=True,
+                stopping_criteria=[stopping_criteria],
+            )
+            duration = time.time() - start_time
 
     outputs = tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0]
     outputs = outputs.strip()
@@ -133,6 +139,8 @@ def eval_model(args):
         outputs = outputs[: -len(stop_str)]
     outputs = outputs.strip()
     print(outputs)
+    if args.benchmark:
+        print(f"Taking {duration:.3f} seconds for {len(output_ids[0])} tokens.")
 
 
 if __name__ == "__main__":
@@ -149,6 +157,7 @@ if __name__ == "__main__":
     parser.add_argument("--top_p", type=float, default=None)
     parser.add_argument("--num_beams", type=int, default=1)
     parser.add_argument("--max_new_tokens", type=int, default=512)
+    parser.add_argument("--benchmark", type=bool, default=False)
     args = parser.parse_args()
 
     eval_model(args)

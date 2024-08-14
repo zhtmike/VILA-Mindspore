@@ -188,7 +188,7 @@ def preprocess_llama_2(
             truncation=True,
         ).input_ids
 
-    targets = input_ids.clone()
+    targets = input_ids.copy()
 
     assert (
         conv.sep_style == conversation_lib.SeparatorStyle.LLAMA_2
@@ -277,7 +277,7 @@ def preprocess_llama_3(
             truncation=True,
         ).input_ids
 
-    targets = input_ids.clone()
+    targets = input_ids.copy()
     assert conv.sep_style == conversation_lib.SeparatorStyle.LLAMA_3
 
     # Mask targets
@@ -369,7 +369,7 @@ def preprocess_v1(
             truncation=True,
         ).input_ids
 
-    targets = input_ids.clone()
+    targets = input_ids.copy()
 
     assert conv.sep_style == conversation_lib.SeparatorStyle.TWO
 
@@ -458,7 +458,7 @@ def preprocess_mpt(
             truncation=True,
         ).input_ids
 
-    targets = input_ids.clone()
+    targets = input_ids.copy()
     assert conv.sep_style == conversation_lib.SeparatorStyle.MPT
 
     # Mask targets
@@ -1018,7 +1018,7 @@ class LazyMMC4Dataset(Dataset):
         images = images[:n_im_patch]
         assert len(images) == n_im_patch, print(text, input_ids)
 
-        targets = input_ids.clone()
+        targets = input_ids.copy()
 
         if self.image_following_text_only:  # keep only text after leading image token
             # remove loss for any token before the first <image> token

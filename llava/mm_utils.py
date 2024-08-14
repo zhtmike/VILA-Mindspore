@@ -20,8 +20,9 @@ import base64
 import numpy as np
 import os
 
-import torch
-from transformers import StoppingCriteria
+from mindnlp.transformers import StoppingCriteria
+import mindspore as ms
+import mindnlp.core.ops as ops
 from llava.constants import IMAGE_TOKEN_INDEX
 
 import tempfile
@@ -182,14 +183,14 @@ def process_image(image_file, data_args, image_folder):
                 return result
 
         image = expand2square(image, tuple(int(x * 255) for x in processor.image_mean))
-        image = processor.preprocess(image, return_tensors="pt")["pixel_values"][0]
+        image = processor.preprocess(image, return_tensors="ms")["pixel_values"][0]
     else:
         # Using default behavior of the vision encoder
         # For CLIP, default is central crop
         # For Radio, default is central crop
         # For Siglip, default is resize
         # For InternVIT, default is resize
-        image = processor.preprocess(image, return_tensors="pt")["pixel_values"][0]
+        image = processor.preprocess(image, return_tensors="ms")["pixel_values"][0]
     return image
 
 def process_images(images, image_processor, model_cfg):
@@ -198,7 +199,7 @@ def process_images(images, image_processor, model_cfg):
     new_images = [process_image(image, model_cfg, None) for image in images]
 
     if all(x.shape == new_images[0].shape for x in new_images):
-        new_images = torch.stack(new_images, dim=0)
+        new_images = ops.stack(new_images, dim=0)
     return new_images
 
 
@@ -224,8 +225,8 @@ def tokenizer_image_token(
         input_ids.extend(x[offset:])
 
     if return_tensors is not None:
-        if return_tensors == "pt":
-            return torch.tensor(input_ids, dtype=torch.long)
+        if return_tensors == "ms":
+            return ms.Tensor(input_ids, dtype=ms.int64)
         raise ValueError(f"Unsupported tensor type: {return_tensors}")
     return input_ids
 
@@ -257,17 +258,14 @@ class KeywordsStoppingCriteria(StoppingCriteria):
                 cur_keyword_ids = cur_keyword_ids[1:]
             if len(cur_keyword_ids) > self.max_keyword_len:
                 self.max_keyword_len = len(cur_keyword_ids)
-            self.keyword_ids.append(torch.tensor(cur_keyword_ids))
+            self.keyword_ids.append(ms.Tensor(cur_keyword_ids))
         self.tokenizer = tokenizer
         self.start_len = input_ids.shape[1]
 
     def call_for_batch(
-        self, output_ids: torch.LongTensor, scores: torch.FloatTensor, **kwargs
+        self, output_ids: ms.Tensor, scores: ms.Tensor, **kwargs
     ) -> bool:
         offset = min(output_ids.shape[1] - self.start_len, self.max_keyword_len)
-        self.keyword_ids = [
-            keyword_id.to(output_ids.device) for keyword_id in self.keyword_ids
-        ]
         for keyword_id in self.keyword_ids:
             if (output_ids[0, -keyword_id.shape[0] :] == keyword_id).all():
                 return True
@@ -280,9 +278,9 @@ class KeywordsStoppingCriteria(StoppingCriteria):
         return False
 
     def __call__(
-        self, output_ids: torch.LongTensor, scores: torch.FloatTensor, **kwargs
-    ) -> bool:
+        self, output_ids: ms.Tensor, scores: ms.Tensor, **kwargs
+    ) -> ms.Tensor:
         outputs = []
         for i in range(output_ids.shape[0]):
             outputs.append(self.call_for_batch(output_ids[i].unsqueeze(0), scores))
-        return all(outputs)
+        return ms.Tensor(all(outputs))

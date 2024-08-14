@@ -2,13 +2,11 @@
 
 from abc import abstractmethod
 
-import torch
-import torch.nn as nn
-from accelerate.hooks import add_hook_to_module
-from transformers import AutoConfig, PreTrainedModel
-from transformers.image_processing_utils import BaseImageProcessor
-from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
-from s2wrapper import forward as multiscale_forward
+import mindnlp.core.nn as nn
+import mindnlp.core.ops as ops
+
+from mindnlp.transformers import AutoConfig, PreTrainedModel
+from mindnlp.transformers.image_processing_utils import BaseImageProcessor
 
 
 class VisionTower(nn.Module):
@@ -48,50 +46,29 @@ class VisionTower(nn.Module):
         num_new_tokens = int((resolution // patch_size) ** 2)
 
         old_embeddings = embeddings.position_embedding
-        match interpolate_mode:
-            case "linear":
-                ## Step 1: Calculate the corresponding patch ID (pid) in the current resolution (M patches) based on the target resolution (N patches). Formula: pid = pid / N * M
-                ## Step 2:  Obtain new embeddings by interpolating between the embeddings of the two nearest calculated patch IDs. Formula: new_embeds = (pid - floor(pid)) * embeds[ceil(pid)] + (ceil(pid) - pid) * embeds[floor(pid)]
-                import torch
-                import torch.nn as nn
+        if interpolate_mode == "linear":
+            ## Step 1: Calculate the corresponding patch ID (pid) in the current resolution (M patches) based on the target resolution (N patches). Formula: pid = pid / N * M
+            ## Step 2:  Obtain new embeddings by interpolating between the embeddings of the two nearest calculated patch IDs. Formula: new_embeds = (pid - floor(pid)) * embeds[ceil(pid)] + (ceil(pid) - pid) * embeds[floor(pid)]
+            old_num_tokens, old_embedding_dim = old_embeddings.weight.size()
+            new_embeddings = nn.Embedding(
+                num_new_tokens,
+                old_embedding_dim,
+                dtype=old_embeddings.weight.dtype,
+            )
+            mapped_indices = (
+                ops.arange(num_new_tokens)
+                / (num_new_tokens - 1)
+                * (old_num_tokens - 1)
+            )
+            floor_indices = ops.clamp(mapped_indices.floor().long(), min=0, max=old_num_tokens - 1)
+            ceil_indices = ops.clamp(mapped_indices.ceil().long(), min=0, max=old_num_tokens - 1)
+            interpolated_embeds = (mapped_indices - floor_indices)[:, None] * old_embeddings.weight.data[
+                ceil_indices, :
+            ] + (ceil_indices - mapped_indices)[:, None] * old_embeddings.weight.data[floor_indices, :]
+            new_embeddings.weight.data = interpolated_embeds
+        else:
+            raise NotImplementedError
 
-                if is_deepspeed_zero3_enabled():
-                    import deepspeed
-
-                    with deepspeed.zero.GatheredParameters([old_embeddings.weight], modifier_rank=None):
-                        old_num_tokens, old_embedding_dim = old_embeddings.weight.size()
-                else:
-                    old_num_tokens, old_embedding_dim = old_embeddings.weight.size()
-                new_embeddings = nn.Embedding(
-                    num_new_tokens,
-                    old_embedding_dim,
-                    dtype=old_embeddings.weight.dtype,
-                    device=old_embeddings.weight.device,
-                )
-                mapped_indices = (
-                    torch.arange(num_new_tokens).to(old_embeddings.weight.device)
-                    / (num_new_tokens - 1)
-                    * (old_num_tokens - 1)
-                )
-                floor_indices = torch.clamp(mapped_indices.floor().long(), min=0, max=old_num_tokens - 1)
-                ceil_indices = torch.clamp(mapped_indices.ceil().long(), min=0, max=old_num_tokens - 1)
-                if is_deepspeed_zero3_enabled():
-                    params = [old_embeddings.weight, new_embeddings.weight]
-                    with deepspeed.zero.GatheredParameters(params, modifier_rank=0):
-                        interpolated_embeds = (mapped_indices - floor_indices)[:, None] * old_embeddings.weight.data[
-                            ceil_indices, :
-                        ] + (ceil_indices - mapped_indices)[:, None] * old_embeddings.weight.data[floor_indices, :]
-                else:
-                    interpolated_embeds = (mapped_indices - floor_indices)[:, None] * old_embeddings.weight.data[
-                        ceil_indices, :
-                    ] + (ceil_indices - mapped_indices)[:, None] * old_embeddings.weight.data[floor_indices, :]
-                new_embeddings.weight.data = interpolated_embeds
-            case _:
-                raise NotImplementedError
-
-        if hasattr(old_embeddings, "_hf_hook"):
-            hook = old_embeddings._hf_hook
-            add_hook_to_module(new_embeddings, hook)
         new_embeddings.requires_grad_(old_embeddings.weight.requires_grad)
         ## update vision encoder's configurations
         model.config.image_size = resolution
@@ -107,7 +84,7 @@ class VisionTower(nn.Module):
         embeddings.image_size = resolution
         embeddings.num_patches = embeddings.num_positions = num_new_tokens
         embeddings.position_ids = (
-            torch.arange(embeddings.num_positions).expand((1, -1)).to(old_embeddings.weight.device)
+            ops.arange(embeddings.num_positions).expand((1, -1))
         )
 
     def forward(self, images):
@@ -115,14 +92,14 @@ class VisionTower(nn.Module):
             image_features = []
             for image in images:
                 image_forward_out = self.vision_tower(
-                    image.to(device=self.device, dtype=self.dtype).unsqueeze(0),
+                    image.to(dtype=self.dtype).unsqueeze(0),
                     output_hidden_states=True,
                 )
                 image_feature = self.feature_select(image_forward_out).to(image.dtype)
                 image_features.append(image_feature)
         else:
             image_forward_outs = self.vision_tower(
-                images.to(device=self.device, dtype=self.dtype),
+                images.to(dtype=self.dtype),
                 output_hidden_states=True,
             )
             image_features = self.feature_select(image_forward_outs).to(images.dtype)
@@ -131,15 +108,11 @@ class VisionTower(nn.Module):
 
     @property
     def dummy_feature(self):
-        return torch.zeros(1, self.hidden_size, device=self.device, dtype=self.dtype)
+        return ops.zeros(1, self.hidden_size, dtype=self.dtype)
 
     @property
     def dtype(self):
         return self.vision_tower.dtype
-
-    @property
-    def device(self):
-        return self.vision_tower.device
 
     @property
     def config(self):
@@ -155,40 +128,3 @@ class VisionTower(nn.Module):
     @property
     def num_patches(self):
         return (self.config.image_size // self.config.patch_size) ** 2
-
-
-class VisionTowerS2(VisionTower):
-    def __init__(self, vision_tower, args, delay_load=False):
-        super().__init__(vision_tower, args, delay_load)
-
-        self.scales = list(map(int, args.s2_scales.split(',')))
-        self.scales.sort()
-        self.max_split_size = args.s2_max_split_size
-
-    @torch.no_grad()
-    def forward_feature(self, images):
-        image_forward_outs = self.vision_tower(images.to(device=self.device, dtype=self.dtype), output_hidden_states=True)
-        image_features = self.feature_select(image_forward_outs).to(images.dtype)
-        return image_features
-
-    @torch.no_grad()
-    def forward(self, images):
-        if type(images) is list:
-            image_features = []
-            for image in images:
-                image_feature = multiscale_forward(self.forward_feature,
-                                                   image.unsqueeze(0),
-                                                   img_sizes=self.scales,
-                                                   max_split_size=self.max_split_size)
-                image_features.append(image_feature)
-        else:
-            image_features = multiscale_forward(self.forward_feature,
-                                                images,
-                                                img_sizes=self.scales,
-                                                max_split_size=self.max_split_size)
-
-        return image_features
-
-    @property
-    def hidden_size(self):
-        return self.config.hidden_size * len(self.scales)

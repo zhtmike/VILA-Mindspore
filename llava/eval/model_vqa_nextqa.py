@@ -62,7 +62,7 @@ def get_model_output(model, image_processor, tokenizer, video_path, qs, args):
         return_tensors="pt",
     )
     input_ids = torch.unsqueeze(input_ids, 0)
-    input_ids = torch.as_tensor(input_ids).cuda()
+    input_ids = torch.as_tensor(input_ids)
 
     stop_str = conv.sep if conv.sep_style != SeparatorStyle.TWO else conv.sep2
     keywords = [stop_str]
@@ -70,7 +70,7 @@ def get_model_output(model, image_processor, tokenizer, video_path, qs, args):
     with torch.inference_mode():
         output_ids = model.generate(
             input_ids,
-            images=image_tensor.half().cuda(),
+            images=image_tensor.half(),
             do_sample=True,
             temperature=0.2,
             max_new_tokens=1024,

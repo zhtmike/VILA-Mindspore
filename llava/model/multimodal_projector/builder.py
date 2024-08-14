@@ -1,10 +1,10 @@
 # This file is modified from https://github.com/haotian-liu/LLaVA/
 
 import os
-import torch
+import mindspore
 
 from .base_projector import MultimodalProjectorConfig, MultimodalProjector
-from transformers import PretrainedConfig, PreTrainedModel
+from mindnlp.transformers import PretrainedConfig, PreTrainedModel
 
 
 def build_mm_projector(
@@ -19,7 +19,7 @@ def build_mm_projector(
             model_type_or_path
         ), f"Resume mm projector path {model_type_or_path} does not exist!"
         return MultimodalProjector.from_pretrained(
-            model_type_or_path, config, torch_dtype=eval(config.model_dtype)
+            model_type_or_path, config, ms_dtype=eval(config.model_dtype)
         )
     ## build from scratch
     else:

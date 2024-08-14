@@ -15,8 +15,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # This file is modified from https://github.com/haotian-liu/LLaVA/
 import os, os.path as osp
-from transformers import AutoConfig
-from transformers import  PretrainedConfig
+from mindnlp.transformers import AutoConfig
+from mindnlp.transformers import  PretrainedConfig
 from huggingface_hub import snapshot_download, repo_exists
 from huggingface_hub.utils import validate_repo_id, HFValidationError
 

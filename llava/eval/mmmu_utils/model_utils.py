@@ -47,7 +47,7 @@ def call_llava_engine_df(args, sample, model, tokenizer=None, processor=None):
     conv.append_message(conv.roles[0], prompt)
     conv.append_message(conv.roles[1], None)
     prompt = conv.get_prompt()
-    input_ids = tokenizer_image_token(prompt, tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt").unsqueeze(0).cuda()
+    input_ids = tokenizer_image_token(prompt, tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt").unsqueeze(0)
     image = sample["image"]
 
     stop_str = conv.sep if conv.sep_style != SeparatorStyle.TWO else conv.sep2
@@ -60,7 +60,7 @@ def call_llava_engine_df(args, sample, model, tokenizer=None, processor=None):
     if image is not None:
         output_ids = model.generate(
             input_ids,
-            images=image.unsqueeze(0).half().cuda(),
+            images=image.unsqueeze(0).half(),
             do_sample=True,
             temperature=1,
             top_p=None,

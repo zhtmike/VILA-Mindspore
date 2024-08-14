@@ -85,14 +85,14 @@ if __name__ == '__main__':
             print("Image file: %s"%image_file)
             image = Image.open(os.path.join(args.image_folder, image_file))
             image_tensor = image_processor.preprocess(image, return_tensors='pt')['pixel_values'][0]
-            images = image_tensor.unsqueeze(0).half().cuda()
+            images = image_tensor.unsqueeze(0).half()
 
             qs = DEFAULT_IMAGE_TOKEN + '\n' + qs
             cur_prompt = '<image>' + '\n' + cur_prompt
         else:
             images = None
 
-        input_ids = tokenizer_image_token(cur_prompt, tokenizer, IMAGE_TOKEN_INDEX, return_tensors='pt').unsqueeze(0).cuda()
+        input_ids = tokenizer_image_token(cur_prompt, tokenizer, IMAGE_TOKEN_INDEX, return_tensors='pt').unsqueeze(0)
 
         attention_mask = torch.ones(input_ids.shape, device=device, dtype=torch.int64)
         position_ids = torch.arange(input_ids.shape[-1], device=device)

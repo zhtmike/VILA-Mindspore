@@ -95,14 +95,14 @@ if __name__ == '__main__':
         conv.append_message(conv.roles[1], None)
         prompt = conv.get_prompt()
 
-        input_ids = tokenizer_image_token(prompt, tokenizer, IMAGE_TOKEN_INDEX, return_tensors='pt').unsqueeze(0).cuda()
+        input_ids = tokenizer_image_token(prompt, tokenizer, IMAGE_TOKEN_INDEX, return_tensors='pt').unsqueeze(0)
 
         image = Image.open(os.path.join(args.image_folder, image_file))
         image_tensor = image_processor.preprocess(image, return_tensors='pt')['pixel_values'][0]
 
         pred = model.generate(
-            input_ids=input_ids.cuda(),
-            images=image_tensor.unsqueeze(0).half().cuda(),
+            input_ids=input_ids,
+            images=image_tensor.unsqueeze(0).half(),
             do_sample=False,
             num_beams=1,
             max_new_tokens=ds_collections[args.dataset]['max_new_tokens'],

@@ -61,9 +61,9 @@ def maybe_zero_3(param, ignore_status=False, name=None):
                     f"{name}: param.ds_status != ZeroParamStatus.NOT_AVAILABLE: {param.ds_status}"
                 )
         with zero.GatheredParameters([param]):
-            param = param.data.detach().cpu().clone()
+            param = param.data.detach().cpu().copy()
     else:
-        param = param.detach().cpu().clone()
+        param = param.detach().cpu().copy()
     return param
 
 

@@ -23,14 +23,14 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 import sentencepiece as spm
 
-from transformers.convert_slow_tokenizer import import_protobuf
-from transformers.tokenization_utils import PreTrainedTokenizer
-from transformers.tokenization_utils_base import AddedToken
+from mindnlp.transformers.convert_slow_tokenizer import import_protobuf
+from mindnlp.transformers.tokenization_utils import PreTrainedTokenizer
+from mindnlp.transformers.tokenization_utils_base import AddedToken
 
 
 if TYPE_CHECKING:
-    from transformers.tokenization_utils_base import TextInput
-from transformers.utils import logging, requires_backends
+    from mindnlp.transformers.tokenization_utils_base import TextInput
+from mindnlp.transformers import logging
 
 
 logger = logging.get_logger(__name__)
@@ -108,7 +108,6 @@ class SiglipTokenizer(PreTrainedTokenizer):
         do_lower_case=True,
         **kwargs,
     ) -> None:
-        requires_backends(self, "protobuf")
 
         pad_token = (
             AddedToken(pad_token, rstrip=True, lstrip=True, normalized=False, special=True)

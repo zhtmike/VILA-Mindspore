@@ -13,47 +13,9 @@
 # limitations under the License.
 from typing import TYPE_CHECKING
 
-from transformers.utils import (
-    OptionalDependencyNotAvailable,
-    _LazyModule,
-    is_torch_available,
-    is_vision_available,
-)
-
-
-_import_structure = {
-    "configuration_siglip": [
-        "SIGLIP_PRETRAINED_CONFIG_ARCHIVE_MAP",
-        "SiglipConfig",
-        "SiglipTextConfig",
-        "SiglipVisionConfig",
-    ],
-    "processing_siglip": ["SiglipProcessor"],
-    "tokenization_siglip": ["SiglipTokenizer"],
-}
-
-try:
-    if not is_vision_available():
-        raise OptionalDependencyNotAvailable()
-except OptionalDependencyNotAvailable:
-    pass
-else:
-    _import_structure["image_processing_siglip"] = ["SiglipImageProcessor"]
-
-try:
-    if not is_torch_available():
-        raise OptionalDependencyNotAvailable()
-except OptionalDependencyNotAvailable:
-    pass
-else:
-    _import_structure["modeling_siglip"] = [
-        "SIGLIP_PRETRAINED_MODEL_ARCHIVE_LIST",
-        "SiglipModel",
-        "SiglipPreTrainedModel",
-        "SiglipTextModel",
-        "SiglipVisionModel",
-    ]
-
+from .configuration_siglip import SiglipVisionConfig
+from .modeling_siglip import SiglipVisionModel
+from .image_processing_siglip import SiglipImageProcessor
 
 if TYPE_CHECKING:
     from .configuration_siglip import (
@@ -64,31 +26,11 @@ if TYPE_CHECKING:
     )
     from .processing_siglip import SiglipProcessor
     from .tokenization_siglip import SiglipTokenizer
+    from .image_processing_siglip import SiglipImageProcessor
 
-    try:
-        if not is_vision_available():
-            raise OptionalDependencyNotAvailable()
-    except OptionalDependencyNotAvailable:
-        pass
-    else:
-        from .image_processing_siglip import SiglipImageProcessor
-
-    try:
-        if not is_torch_available():
-            raise OptionalDependencyNotAvailable()
-    except OptionalDependencyNotAvailable:
-        pass
-    else:
-        from .modeling_siglip import (
-            SIGLIP_PRETRAINED_MODEL_ARCHIVE_LIST,
-            SiglipModel,
-            SiglipPreTrainedModel,
-            SiglipTextModel,
-            SiglipVisionModel,
-        )
-
-
-else:
-    import sys
-
-    sys.modules[__name__] = _LazyModule(__name__, globals()["__file__"], _import_structure, module_spec=__spec__)
+    from .modeling_siglip import (
+        SiglipModel,
+        SiglipPreTrainedModel,
+        SiglipTextModel,
+        SiglipVisionModel,
+    )

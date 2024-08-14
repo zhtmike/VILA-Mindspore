@@ -1,11 +1,10 @@
+from typing import Union
 import os
 import re
-import torch
 import pathlib
+import mindspore as ms
 from dataclasses import dataclass
-from transformers import PretrainedConfig, PreTrainedModel
-from transformers.integrations.deepspeed import is_deepspeed_zero3_enabled
-from accelerate.hooks import add_hook_to_module
+from mindnlp.transformers import PretrainedConfig, PreTrainedModel
 
 
 def rprint(*args, **kwargs):
@@ -35,7 +34,7 @@ def is_local(model_name_or_path: str) -> bool:
 
 def get_checkpoint_path(
     output_dir: str, checkpoint_prefix: str = "checkpoint"
-) -> str | None:
+) -> Union[str, None]:
     output_dir = os.path.abspath(output_dir)
     pathlib_dir = pathlib.Path(output_dir)
 
@@ -74,8 +73,8 @@ def prepare_config_for_training(
     if getattr(config, "mm_projector_cfg", None) is None:
         config.mm_projector_cfg = model_args.mm_projector
     ## set default dtype
-    config.model_dtype = torch.bfloat16 if training_args.bf16 else torch.float16
-    config.model_dtype = config.model_dtype.__str__()
+    config.model_dtype = ms.bfloat16 if training_args.bf16 else ms.float16
+    config.model_dtype = config.model_dtype.__repr__()
     ## set tuning modules
     config.tune_language_model = training_args.tune_language_model
     config.tune_vision_tower = training_args.tune_vision_tower

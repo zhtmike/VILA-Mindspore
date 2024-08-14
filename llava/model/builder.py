@@ -18,15 +18,18 @@ import os
 import warnings
 import shutil
 
-from transformers import (
+import mindspore as ms
+import mindnlp.core.nn as nn
+import mindnlp.core.ops as ops
+import mindnlp.core.serialization
+
+from mindnlp.transformers import (
     AutoTokenizer,
     AutoModelForCausalLM,
     AutoConfig,
-    BitsAndBytesConfig,
     PretrainedConfig,
     PreTrainedModel,
 )
-import torch
 from llava.model import *
 from llava.model.utils import is_mm_model
 from llava.model.language_model.llava_llama import LlavaConfig
@@ -43,26 +46,19 @@ def load_pretrained_model(
     load_8bit=False,
     load_4bit=False,
     device_map="auto",
-    device="cuda",
+    device="npu",
     **kwargs,
 ):
-    kwargs = {"device_map": device_map, **kwargs}
+    if device != "npu":
+        raise NotImplementedError("Currently it supports NPU only.")
 
-    if device != "cuda":
-        kwargs["device_map"] = {"": device}
 
     if load_8bit:
-        kwargs["load_in_8bit"] = True
+        raise NotImplementedError("Currently it does not support 8bit")
     elif load_4bit:
-        kwargs["load_in_4bit"] = True
-        kwargs["quantization_config"] = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_compute_dtype=torch.float16,
-            bnb_4bit_use_double_quant=True,
-            bnb_4bit_quant_type="nf4",
-        )
+        raise NotImplementedError("Currently it does not support 4bit")
     else:
-        kwargs["torch_dtype"] = torch.float16
+        kwargs['ms_dtype'] = ms.float16
 
     if is_mm_model(model_path):
         # Load LLaVA model
@@ -82,20 +78,20 @@ def load_pretrained_model(
             )
             token_num, tokem_dim = model.lm_head.out_features, model.lm_head.in_features
             if model.lm_head.weight.shape[0] != token_num:
-                model.lm_head.weight = torch.nn.Parameter(
-                    torch.empty(
-                        token_num, tokem_dim, device=model.device, dtype=model.dtype
+                model.lm_head.weight = nn.Parameter(
+                    ops.empty(
+                        token_num, tokem_dim, dtype=model.dtype
                     )
                 )
-                model.model.embed_tokens.weight = torch.nn.Parameter(
-                    torch.empty(
-                        token_num, tokem_dim, device=model.device, dtype=model.dtype
+                model.model.embed_tokens.weight = nn.Parameter(
+                    ops.empty(
+                        token_num, tokem_dim, dtype=model.dtype
                     )
                 )
 
             print("Loading additional LLaVA weights...")
             if os.path.exists(os.path.join(model_path, "non_lora_trainables.bin")):
-                non_lora_trainables = torch.load(
+                non_lora_trainables = mindnlp.core.serialization.load(
                     os.path.join(model_path, "non_lora_trainables.bin"),
                     map_location="cpu",
                 )
@@ -107,7 +103,7 @@ def load_pretrained_model(
                     cache_file = hf_hub_download(
                         repo_id=repo_id, filename=filename, subfolder=subfolder
                     )
-                    return torch.load(cache_file, map_location="cpu")
+                    return mindnlp.core.serialization.load(cache_file, map_location="cpu")
 
                 non_lora_trainables = load_from_hf(
                     model_path, "non_lora_trainables.bin"
@@ -123,7 +119,7 @@ def load_pretrained_model(
                 }
             model.load_state_dict(non_lora_trainables, strict=False)
 
-            from peft import PeftModel
+            from mindnlp.peft import PeftModel
 
             print("Loading LoRA weights...")
             model = PeftModel.from_pretrained(model, model_path)
@@ -184,7 +180,7 @@ def load_pretrained_model(
         # Load language model
         if model_base is not None:
             # PEFT model
-            from peft import PeftModel
+            from mindnlp.peft import PeftModel
 
             tokenizer = AutoTokenizer.from_pretrained(model_base, use_fast=False)
             model = AutoModelForCausalLM.from_pretrained(
@@ -195,7 +191,7 @@ def load_pretrained_model(
             print(f"Merging weights")
             model = model.merge_and_unload()
             print("Convert to FP16...")
-            model.to(torch.float16)
+            model.to(ms.float16)
         else:
             if "mpt" in model_name.lower():
                 tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True)
@@ -222,9 +218,9 @@ def load_pretrained_model(
             )
         model.resize_token_embeddings(len(tokenizer))
         vision_tower = model.get_vision_tower()
-        vision_tower.to(device=device, dtype=torch.float16)
+        vision_tower.to(dtype=ms.float16)
         mm_projector = model.get_mm_projector()
-        mm_projector.to(device=device, dtype=torch.float16)
+        mm_projector.to(dtype=ms.float16)
         image_processor = vision_tower.image_processor
 
     if hasattr(model.llm.config, "max_sequence_length"):
@@ -253,8 +249,6 @@ def prepare_config_for_eval(config: PretrainedConfig, kwargs: dict):
     except AttributeError:
         raise ValueError(f"Invalid configuration! Cannot find vision_tower in config:\n{config}")
     
-    config.model_dtype = kwargs.pop("torch_dtype").__str__()
+    config.model_dtype = kwargs.pop("ms_dtype").__repr__()
     # siglip does not support device_map = "auto"
     vision_tower_name = parse_model_name_or_path(config, "vision_tower")
-    if "siglip" in vision_tower_name.lower():
-        kwargs["device_map"] = "cuda"

@@ -1,4 +1,4 @@
-from transformers import PretrainedConfig
+from mindnlp.transformers import PretrainedConfig
 
 
 class LlavaConfig(PretrainedConfig):

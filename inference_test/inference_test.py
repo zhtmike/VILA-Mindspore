@@ -99,7 +99,7 @@ def eval_model(args, model, tokenizer, image_processor):
 
             # inputs = tokenizer([prompt])
             inputs = tokenizer_image_token(prompt, tokenizer, IMAGE_TOKEN_INDEX)
-            input_ids = torch.as_tensor(inputs).cuda().unsqueeze(0)
+            input_ids = torch.as_tensor(inputs).unsqueeze(0)
 
             stop_str = conv.sep if conv.sep_style != SeparatorStyle.TWO else conv.sep2
             keywords = [stop_str]
@@ -109,7 +109,7 @@ def eval_model(args, model, tokenizer, image_processor):
             with torch.inference_mode():
                 output_ids = model.generate(
                     input_ids,
-                    images=image_tensor.to(dtype=torch.float16, device="cuda", non_blocking=True),
+                    images=image_tensor.to(dtype=torch.float16, non_blocking=True),
                     do_sample=True if args.temperature > 0 else False,
                     temperature=args.temperature,
                     top_p=0.7,

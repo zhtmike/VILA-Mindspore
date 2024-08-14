@@ -17,9 +17,11 @@
 
 from typing import List, Optional, Tuple, Union
 import os, os.path as osp
-import torch
 
-from transformers import (
+import mindspore as ms
+import mindnlp
+
+from mindnlp.transformers import (
     LlamaForCausalLM,
     LlamaConfig,
     PreTrainedModel,
@@ -30,7 +32,7 @@ from transformers import (
     PreTrainedModel,
 )
 
-from transformers.modeling_outputs import CausalLMOutputWithPast
+from mindnlp.transformers.modeling_outputs import CausalLMOutputWithPast
 from ..llava_arch import LlavaMetaModel, LlavaMetaForCausalLM
 from ..multimodal_encoder.builder import build_vision_tower
 from ..multimodal_projector.builder import build_mm_projector
@@ -78,13 +80,13 @@ class LlavaLlamaModel(LlavaMetaModel, LlavaMetaForCausalLM, PreTrainedModel):
 
     def forward(
         self,
-        input_ids: torch.LongTensor = None,
-        images: Optional[torch.FloatTensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        past_key_values: Optional[List[torch.FloatTensor]] = None,
-        inputs_embeds: Optional[torch.FloatTensor] = None,
-        labels: Optional[torch.LongTensor] = None,
+        input_ids: ms.Tensor = None,
+        images: Optional[ms.Tensor] = None,
+        attention_mask: Optional[ms.Tensor] = None,
+        position_ids: Optional[ms.Tensor] = None,
+        past_key_values: Optional[List[ms.Tensor]] = None,
+        inputs_embeds: Optional[ms.Tensor] = None,
+        labels: Optional[ms.Tensor] = None,
         use_cache: Optional[bool] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
@@ -145,12 +147,12 @@ class LlavaLlamaModel(LlavaMetaModel, LlavaMetaForCausalLM, PreTrainedModel):
         )
         return outputs
     
-    @torch.no_grad()
+    @mindnlp.core.no_grad()
     def generate(
         self,
-        input_ids: Optional[torch.FloatTensor] = None,
-        images: Optional[torch.FloatTensor] = None,
-        attention_mask: Optional[torch.LongTensor] = None,
+        input_ids: Optional[ms.Tensor] = None,
+        images: Optional[ms.Tensor] = None,
+        attention_mask: Optional[ms.Tensor] = None,
         **generation_kwargs,
     ):
         if images is not None:

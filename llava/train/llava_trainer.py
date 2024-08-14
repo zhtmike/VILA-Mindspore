@@ -38,9 +38,9 @@ def maybe_zero_3(param, ignore_status=False, name=None):
             if not ignore_status:
                 print(name, "no ignore status")
         with zero.GatheredParameters([param]):
-            param = param.data.detach().cpu().clone()
+            param = param.data.detach().cpu().copy()
     else:
-        param = param.detach().cpu().clone()
+        param = param.detach().cpu().copy()
     return param
 
 

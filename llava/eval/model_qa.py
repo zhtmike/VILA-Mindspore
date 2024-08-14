@@ -1,8 +1,10 @@
 # This file is modified from https://github.com/haotian-liu/LLaVA/
 
 import argparse
-from transformers import AutoTokenizer, AutoModelForCausalLM, StoppingCriteria
-import torch
+from mindnlp.transformers import AutoTokenizer, AutoModelForCausalLM, StoppingCriteria
+import mindspore as ms
+import mindnlp
+import mindnlp.core.ops as ops
 import os
 import json
 from tqdm import tqdm
@@ -20,7 +22,7 @@ class KeywordsStoppingCriteria(StoppingCriteria):
         self.start_len = None
         self.input_ids = input_ids
 
-    def __call__(self, output_ids: torch.LongTensor, scores: torch.FloatTensor, **kwargs) -> bool:
+    def __call__(self, output_ids: ms.Tensor, scores: ms.Tensor, **kwargs) -> bool:
         if self.start_len is None:
             self.start_len = self.input_ids.shape[1]
         else:
@@ -31,14 +33,14 @@ class KeywordsStoppingCriteria(StoppingCriteria):
         return False
 
 
-@torch.inference_mode()
+@mindnlp.core.no_grad()
 def eval_model(model_name, questions_file, answers_file):
     # Model
     disable_torch_init()
     model_name = os.path.expanduser(model_name)
     tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False)
     model = AutoModelForCausalLM.from_pretrained(model_name,
-        torch_dtype=torch.float16).cuda()
+        ms_dtype=ms.float16)
 
 
     ques_file = open(os.path.expanduser(questions_file), "r")
@@ -51,7 +53,7 @@ def eval_model(model_name, questions_file, answers_file):
         conv.append_message(conv.roles[0], qs)
         prompt = conv.get_prompt()
         inputs = tokenizer([prompt])
-        input_ids = torch.as_tensor(inputs.input_ids).cuda()
+        input_ids = ops.as_tensor(inputs.input_ids)
         stopping_criteria = KeywordsStoppingCriteria([conv.sep], tokenizer, input_ids)
         output_ids = model.generate(
             input_ids,

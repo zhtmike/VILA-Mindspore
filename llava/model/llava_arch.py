@@ -16,14 +16,17 @@ import os, sys, os.path as osp
 import warnings
 from abc import ABC, abstractmethod
 
-import torch, logging
+import logging
+import mindspore as ms
+import mindnlp.core.ops as ops
+import mindnlp.core.nn as nn
+import mindnlp.core.serialization
 
-from transformers import (
+from mindnlp.transformers import (
     AutoTokenizer,
     AutoModel,
     AutoModelForCausalLM,
     AutoConfig,
-    BitsAndBytesConfig,
     PretrainedConfig,
     PreTrainedModel,
 )
@@ -50,7 +53,7 @@ from llava.model.multimodal_encoder.builder import build_vision_tower
 from llava.model.multimodal_projector.builder import build_mm_projector
 from llava.model.configuration_llava import LlavaConfig
 
-from transformers.modeling_utils import ContextManagers, no_init_weights
+from mindnlp.transformers.modeling_utils import ContextManagers, no_init_weights
 
 ## TODO decide whether should we use metaclass
 class LlavaMetaModel(ABC):
@@ -266,21 +269,20 @@ class LlavaMetaForCausalLM(ABC):
                 and input_ids.shape[1] == 1
             ):
                 target_shape = past_key_values[-1][-1].shape[-2] + 1
-                attention_mask = torch.cat(
+                attention_mask = ops.cat(
                     (
                         attention_mask,
-                        torch.ones(
+                        ops.ones(
                             (
                                 attention_mask.shape[0],
                                 target_shape - attention_mask.shape[1],
                             ),
                             dtype=attention_mask.dtype,
-                            device=attention_mask.device,
                         ),
                     ),
                     dim=1,
                 )
-                position_ids = torch.sum(attention_mask, dim=1).unsqueeze(-1) - 1
+                position_ids = ops.sum(attention_mask, dim=1).unsqueeze(-1) - 1
             return (
                 input_ids,
                 position_ids,
@@ -291,10 +293,10 @@ class LlavaMetaForCausalLM(ABC):
             )
         # handle different image dtypes for packing
         if type(images) is list:
-            images = torch.cat(images, dim=0)
+            images = ops.cat(images, dim=0)
         elif images.ndim == 5:  # batch_size x seq_len x image_channels
-            images = images.flatten(0, 1)
-        image_features = self.encode_images(images).to(self.device)
+            images = images.flatten(start_dim=0, end_dim=1)
+        image_features = self.encode_images(images)
         # Note (kentang-mit@): image start / end is not implemented here to support pretraining.
         if getattr(self.config, "turn_mm_projector", False) and getattr(self.config, "mm_use_im_start_end", False):
             raise NotImplementedError
@@ -307,16 +309,16 @@ class LlavaMetaForCausalLM(ABC):
         _position_ids = position_ids
         _attention_mask = attention_mask
         if attention_mask is None:
-            attention_mask = torch.ones_like(input_ids, dtype=torch.bool)
+            attention_mask = ops.ones_like(input_ids, dtype=ms.bool_)
         else:
             attention_mask = attention_mask.bool()
         if position_ids is None:
-            position_ids = torch.arange(0, input_ids.shape[1], dtype=torch.long, device=input_ids.device)
+            position_ids = ops.arange(0, input_ids.shape[1], dtype=ms.int64)
         if labels is None:
-            labels = torch.full_like(input_ids, IGNORE_INDEX)
+            labels = ops.full_like(input_ids, IGNORE_INDEX)
 
         # remove the padding using attention_mask
-        input_ids_copy = input_ids.clone()
+        input_ids_copy = input_ids.copy()
         # kentang-mit@: Otherwise tokenizer out of bounds. Embeddings of image tokens will not be used.
         input_ids_copy[input_ids_copy == IMAGE_TOKEN_INDEX] = 0
         input_embeds = self.llm.model.embed_tokens(input_ids_copy)
@@ -344,7 +346,7 @@ class LlavaMetaForCausalLM(ABC):
                 cur_image_features = image_features[0]
                 # cur_input_embeds_1 = self.get_llm().embed_tokens(cur_input_ids)
                 cur_input_embeds_1 = input_embeds_1[batch_idx]
-                cur_input_embeds = torch.cat([cur_input_embeds_1, cur_image_features[0:0]], dim=0)
+                cur_input_embeds = ops.cat([cur_input_embeds_1, cur_image_features[0:0]], dim=0)
                 new_input_embeds.append(cur_input_embeds)
                 new_labels.append(labels[batch_idx])
                 # kenang-mit@: we do not have placeholdr image for text-only data now.
@@ -353,7 +355,7 @@ class LlavaMetaForCausalLM(ABC):
 
             cur_input_embeds = input_embeds_1[batch_idx]
             image_token_indices = (
-                [-1] + torch.where(cur_input_ids == IMAGE_TOKEN_INDEX)[0].tolist() + [cur_input_ids.shape[0]]
+                [-1] + ops.nonzero(cur_input_ids == IMAGE_TOKEN_INDEX, as_tuple=True)[0].tolist() + [cur_input_ids.shape[0]]
             )
             cur_input_ids_noim = []
             cur_labels = labels[batch_idx]
@@ -364,7 +366,7 @@ class LlavaMetaForCausalLM(ABC):
                 cur_labels_noim.append(cur_labels[image_token_indices[i] + 1 : image_token_indices[i + 1]])
                 cur_input_embeds_no_im.append(cur_input_embeds[image_token_indices[i] + 1 : image_token_indices[i + 1]])
             split_sizes = [x.shape[0] for x in cur_labels_noim]
-            # cur_input_embeds = self.get_llm().embed_tokens(torch.cat(cur_input_ids_noim))
+            # cur_input_embeds = self.get_llm().embed_tokens(ops.cat(cur_input_ids_noim))
             # cur_input_embeds_no_im = torch.split(cur_input_embeds, split_sizes, dim=0)
             cur_new_input_embeds = []
             cur_new_labels = []
@@ -376,16 +378,15 @@ class LlavaMetaForCausalLM(ABC):
                     cur_image_idx += 1
                     cur_new_input_embeds.append(cur_image_features)
                     cur_new_labels.append(
-                        torch.full(
+                        ops.full(
                             (cur_image_features.shape[0],),
                             IGNORE_INDEX,
-                            device=cur_labels.device,
                             dtype=cur_labels.dtype,
                         )
                     )
 
-            cur_new_input_embeds = torch.cat(cur_new_input_embeds)
-            cur_new_labels = torch.cat(cur_new_labels)
+            cur_new_input_embeds = ops.cat(cur_new_input_embeds)
+            cur_new_labels = ops.cat(cur_new_labels)
 
             new_input_embeds.append(cur_new_input_embeds)
             new_labels.append(cur_new_labels)
@@ -402,29 +403,26 @@ class LlavaMetaForCausalLM(ABC):
         batch_size = len(new_input_embeds)
 
         new_input_embeds_padded = []
-        new_labels_padded = torch.full(
+        new_labels_padded = ops.full(
             (batch_size, max_len),
             IGNORE_INDEX,
             dtype=new_labels[0].dtype,
-            device=new_labels[0].device,
         )
-        attention_mask = torch.zeros(
+        attention_mask = ops.zeros(
             (batch_size, max_len),
             dtype=attention_mask.dtype,
-            device=attention_mask.device,
         )
-        position_ids = torch.zeros((batch_size, max_len), dtype=position_ids.dtype, device=position_ids.device)
+        position_ids = ops.zeros((batch_size, max_len), dtype=position_ids.dtype)
 
         for i, (cur_new_embed, cur_new_labels) in enumerate(zip(new_input_embeds, new_labels)):
             cur_len = cur_new_embed.shape[0]
             if getattr(self.llm.config, "tokenizer_padding_side", "right") == "left":
                 new_input_embeds_padded.append(
-                    torch.cat(
+                    ops.cat(
                         (
-                            torch.zeros(
+                            ops.zeros(
                                 (max_len - cur_len, cur_new_embed.shape[1]),
                                 dtype=cur_new_embed.dtype,
-                                device=cur_new_embed.device,
                             ),
                             cur_new_embed,
                         ),
@@ -434,18 +432,17 @@ class LlavaMetaForCausalLM(ABC):
                 if cur_len > 0:
                     new_labels_padded[i, -cur_len:] = cur_new_labels
                     attention_mask[i, -cur_len:] = True
-                    position_ids[i, -cur_len:] = torch.arange(
-                        0, cur_len, dtype=position_ids.dtype, device=position_ids.device
+                    position_ids[i, -cur_len:] = ops.arange(
+                        0, cur_len, dtype=position_ids.dtype
                     )
             else:
                 new_input_embeds_padded.append(
-                    torch.cat(
+                    ops.cat(
                         (
                             cur_new_embed,
-                            torch.zeros(
+                            ops.zeros(
                                 (max_len - cur_len, cur_new_embed.shape[1]),
                                 dtype=cur_new_embed.dtype,
-                                device=cur_new_embed.device,
                             ),
                         ),
                         dim=0,
@@ -454,11 +451,11 @@ class LlavaMetaForCausalLM(ABC):
                 if cur_len > 0:
                     new_labels_padded[i, :cur_len] = cur_new_labels
                     attention_mask[i, :cur_len] = True
-                    position_ids[i, :cur_len] = torch.arange(
-                        0, cur_len, dtype=position_ids.dtype, device=position_ids.device
+                    position_ids[i, :cur_len] = ops.arange(
+                        0, cur_len, dtype=position_ids.dtype
                     )
 
-        new_input_embeds = torch.stack(new_input_embeds_padded, dim=0)
+        new_input_embeds = ops.stack(new_input_embeds_padded, dim=0)
 
         if _labels is None:
             new_labels = None
@@ -496,8 +493,8 @@ class LlavaMetaForCausalLM(ABC):
         new_inputs_embeds = []
         new_position_ids = []
         new_labels = []
-        seqlens_in_batch = attention_mask.sum(dim=-1, dtype=torch.int32)
-        sorted_seqlens_in_batch, sorted_idx = torch.sort(seqlens_in_batch, descending=True)
+        seqlens_in_batch = attention_mask.sum(dim=-1, dtype=ms.int32)
+        sorted_seqlens_in_batch, sorted_idx = ops.sort(seqlens_in_batch, descending=True)
         # print(sorted_seqlens_in_batch)
         max_seqlen = inputs_embeds.shape[1]
 
@@ -515,43 +512,41 @@ class LlavaMetaForCausalLM(ABC):
                 cur_inputs_embeds.append(inputs_embeds[sorted_idx[i]][attention_mask[sorted_idx[i]]])
                 # each item: num_tokens
                 cur_position_ids.append(
-                    torch.arange(
+                    ops.arange(
                         cur_inputs_embeds[-1].shape[0],
-                        device=cur_inputs_embeds[-1].device,
                     )
                 )
                 # each item: num_tokens
                 # remove padding on-the-fly
                 cur_labels.append(labels[sorted_idx[i]][attention_mask[sorted_idx[i]]])
             else:
-                new_inputs_embeds.append(torch.cat(cur_inputs_embeds, 0))
-                new_position_ids.append(torch.cat(cur_position_ids, 0))
-                new_labels.append(torch.cat(cur_labels, 0))
+                new_inputs_embeds.append(ops.cat(cur_inputs_embeds, 0))
+                new_position_ids.append(ops.cat(cur_position_ids, 0))
+                new_labels.append(ops.cat(cur_labels, 0))
                 # The current batch is too long. We will start a new batch.
                 cur_batch_len = cur_seqlen
                 cur_inputs_embeds = [inputs_embeds[sorted_idx[i]][attention_mask[sorted_idx[i]]]]
                 cur_position_ids = [
-                    torch.arange(
+                    ops.arange(
                         cur_inputs_embeds[-1].shape[0],
-                        device=cur_inputs_embeds[-1].device,
                     )
                 ]
                 cur_labels = [labels[sorted_idx[i]][attention_mask[sorted_idx[i]]]]
 
         if len(cur_inputs_embeds):
-            new_inputs_embeds.append(torch.cat(cur_inputs_embeds, 0))
-            new_position_ids.append(torch.cat(cur_position_ids, 0))
-            new_labels.append(torch.cat(cur_labels, 0))
+            new_inputs_embeds.append(ops.cat(cur_inputs_embeds, 0))
+            new_position_ids.append(ops.cat(cur_position_ids, 0))
+            new_labels.append(ops.cat(cur_labels, 0))
 
         # print(new_position_ids[0].device, [x.shape for x in new_inputs_embeds], [x.shape for x in new_labels], [x.shape for x in new_position_ids])
         # assert 0
-        new_inputs_embeds = torch.nn.utils.rnn.pad_sequence(
+        new_inputs_embeds = pad_sequence(
             new_inputs_embeds, batch_first=True, padding_value=self.llm.pad_token_id
         )
 
-        new_position_ids = torch.nn.utils.rnn.pad_sequence(new_position_ids, batch_first=True, padding_value=-1)
+        new_position_ids = pad_sequence(new_position_ids, batch_first=True, padding_value=-1)
 
-        new_labels = torch.nn.utils.rnn.pad_sequence(new_labels, batch_first=True, padding_value=IGNORE_INDEX)
+        new_labels = pad_sequence(new_labels, batch_first=True, padding_value=IGNORE_INDEX)
         ## yunhao: it's currently a workaround to avoid errors for seq_len < 100
         new_attention_mask = new_position_ids.ne(-1)
         # sanity check
@@ -590,7 +585,7 @@ class LlavaMetaForCausalLM(ABC):
                 output_embeddings[-num_new_tokens:] = output_embeddings_avg
             ## TODO yunhao: handle cases for <im_st> <im_end>
             if model_args.pretrain_mm_mlp_adapter:
-                mm_projector_weights = torch.load(model_args.pretrain_mm_mlp_adapter, map_location="cpu")
+                mm_projector_weights = mindnlp.core.serialization.load(model_args.pretrain_mm_mlp_adapter)
                 embed_tokens_weight = mm_projector_weights["model.embed_tokens.weight"]
                 assert num_new_tokens == 2
                 if input_embeddings.shape == embed_tokens_weight.shape:
@@ -607,3 +602,32 @@ class LlavaMetaForCausalLM(ABC):
                     p.requires_grad = False
                 for p in self.get_output_embeddings().parameters():
                     p.requires_grad = False
+
+
+def pad_sequence(sequences, batch_first=False, padding_value=0.0):
+    """
+    Pad a list of sequences to the same length.
+    
+    Args:
+        sequences (List[List[float]]): The list of sequences to be padded.
+        batch_first (bool, optional): If True, the output tensor will have shape (batch_size, max_len, features).
+            If False, the shape will be (max_len, batch_size, features). Default is False.
+        padding_value (float, optional): The value used for padding. Default is 0.0.
+    
+    Returns:
+        torch.Tensor: A tensor containing the padded sequences.
+        
+    Raises:
+        None.
+    """
+    # Determine the maximum sequence length
+    max_len = max(len(seq) for seq in sequences)
+
+    # Pad each sequence using cp.pad
+    padded_sequences = [ops.pad(seq, (0, 0, 0, max_len - len(seq)), mode='constant', value=padding_value) for seq in sequences]
+    # Stack the padded sequences along the appropriate axis
+    if batch_first:
+        padded_sequence = ops.stack(padded_sequences)
+    else:
+        padded_sequence = ops.stack(padded_sequences, 1)
+    return padded_sequence
